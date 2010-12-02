@@ -1,0 +1,109 @@
+#!/usr/bin/tclsh
+
+set listen_port 0
+set server_port 00
+set server ""
+while {[llength $argv]>0} {
+ switch -- [lindex $argv 0] {
+    -l  { set listen_port [lindex $argv 1] 
+          set argv [lrange $argv 2 end]
+          continue
+        }
+    -s  { set server [lindex $argv 1]
+          set argv [lrange $argv 2 end]
+          continue
+        }
+    -p  { set server_port [lindex $argv 1]
+          set argv [lrange $argv 2 end]
+          continue
+        }
+ }
+ puts stderr "Unknown option [lindex $argv 0]\r"
+ exit 1
+}
+
+if {$listen_port == 0} {
+  puts stderr "Must use -l to set listen port"
+  exit 1
+}
+
+if {[string equal "" "$server"]} {
+  puts stderr "Must use -s to set server"
+  exit 1
+}
+
+if {$server_port == 0} {
+  puts stderr "Must use -p to set server port"
+  exit 1
+}
+
+
+proc tidyup {src} {
+    global partners
+    close $src
+    set dest $partners($src)
+    close $dest
+    unset $partners($src)
+    unset $partners($dest)
+    send_user "<<EOF>>"
+    # remaining lines probably not necessary
+    set new_open_spawn_ids {}
+    foreach $id $open_spawn_ids {
+	if {[string equal $id $src]} { continue }
+	if {[string equal $id $dest]} { continue }
+	lappend new_open_spawn_ids $id
+    }
+    global open_spawn_ids
+    set open_spawn_ids $new_open_spawn_ids
+    send_user "new open spawn ids = $open_spawn_ids\n"
+}
+
+proc relay {src fileid} {
+    global partners
+    if {[eof $fileid]} { tidyup $src ; return }
+    set dest partners($src)
+    puts stderr "Looking for $src ($fileid)"
+    expect -i $src {
+	-re {.*} { 
+	    puts stderr "GOT SOMETHING>>>"
+	    send -i $dest $expect_out(buffer)
+	    send_user $expect_out(buffer)
+	}
+	eof { tidyup $from }
+    }
+    puts stderr "Finished looking, got $expect_out(buffer)..."
+}
+
+proc accept_connection {new_channel connecting_host connecting_port} {
+    global server
+    global server_port
+    global partners
+    global prefix
+    #global open_spawn_ids
+    set remote [socket $server $server_port]
+    set local $new_channel
+    fconfigure $local -blocking no -buffering none
+    fconfigure $remote -blocking no -buffering none
+    spawn -open $local
+    set lsid $spawn_id
+    spawn -open $remote
+    set rsid $spawn_id
+    set partners($lsid) $rsid
+    set partners($rsid) $lsid
+    set prefix($lsid) "+> "
+    set prefix($rsid) "<+ "
+    #lappend open_spawn_ids $lsid $rsid
+    #puts "open_spawn_ids = $open_spawn_ids"
+    fileevent $local readable [list relay $lsid $local]
+    fileevent $remote readable [list relay $rsid $remote]
+}
+
+set open_spawn_ids {}
+set local_socket [socket -server accept_connection $listen_port]
+fconfigure stdout -buffering none
+
+vwait forever
+
+
+
+
