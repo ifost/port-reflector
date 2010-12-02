@@ -4,6 +4,7 @@ arguments. When you write to the Tee, it writes it to the files
 underneath."""
 
 class Tee:
+    """You construct a Tee with one (usually two) or more files. Arguments can either be plain files, or a dictionary where the keys are files and the values are a prefix that you want put on output on each write. Then you write to the Tee as if it were a file, and that data gets written to all file objects, possibly prepended by a prefix if you introduced the dest file that way."""
     def __init__(self,*filelist):
         self.__outfiles = {}
         for f in filelist:
